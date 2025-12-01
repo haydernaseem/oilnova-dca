@@ -1,3 +1,5 @@
+[file name]: app.py
+[file content begin]
 import io
 import tempfile
 import datetime
@@ -6,6 +8,7 @@ import pandas as pd
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from scipy.optimize import curve_fit
+import json
 
 # PDF
 from reportlab.lib.pagesizes import A4
@@ -67,28 +70,29 @@ def clean_and_prepare_df(df, time_col="t", rate_col="q"):
     - عمود date → يحوله لأيام من أول تاريخ
     - auto-detect للأعمدة لو الأسماء مختلفة
     """
-    cols_lower = {c.lower(): c for c in df.columns}
+    df_copy = df.copy()
+    cols_lower = {c.lower(): c for c in df_copy.columns}
 
     # معالجة الزمن
-    if time_col not in df.columns:
+    if time_col not in df_copy.columns:
         if "date" in cols_lower:
             dc = cols_lower["date"]
-            df[dc] = pd.to_datetime(df[dc])
-            df = df.sort_values(dc)
-            df["t"] = (df[dc] - df[dc].iloc[0]).dt.days.astype(float)
+            df_copy[dc] = pd.to_datetime(df_copy[dc], errors='coerce')
+            df_copy = df_copy.sort_values(dc)
+            df_copy["t"] = (df_copy[dc] - df_copy[dc].iloc[0]).dt.days.astype(float)
             time_col = "t"
         else:
-            time_col = df.columns[0]
+            time_col = df_copy.columns[0]
 
     # معالجة الـ rate
-    if rate_col not in df.columns:
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if rate_col not in df_copy.columns:
+        numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
         for c in numeric_cols:
             if c != time_col:
                 rate_col = c
                 break
 
-    df2 = df[[time_col, rate_col]].copy()
+    df2 = df_copy[[time_col, rate_col]].copy()
     df2 = df2.rename(columns={time_col: "t", rate_col: "q"})
     df2["t"] = pd.to_numeric(df2["t"], errors="coerce")
     df2["q"] = pd.to_numeric(df2["q"], errors="coerce")
@@ -672,7 +676,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     tech_footer = f"""
     <para align=center>
     <font size=7 color=#95a5a6>
-    Report Version: 1.00 | Analysis Engine: OILNOA AI 
+    Report Version: 1.00 | Analysis Engine: OILNOVA AI 
     </font>
     </para>
     """
@@ -692,32 +696,64 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     return buffer
 
 # ======================
-# 7) API Endpoints
+# 7) API Endpoints - معدلة لتتوافق مع الفرونت
 # ======================
-
 
 @app.route("/dca", methods=["POST"])
 def dca_analyze():
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+        # التحقق من نوع الطلب
+        if request.content_type and 'application/json' in request.content_type:
+            # طلب JSON (من الفرونت الجديد)
+            data = request.get_json()
+            
+            # استخراج البيانات من JSON
+            t = np.array(data.get("t", []))
+            q = np.array(data.get("q", []))
+            cutoff_rate = float(data.get("cutoff_rate", 5.0))
+            days = int(data.get("days", 2000))
+            dt = float(data.get("dt", 30))
+            
+            # التحقق من صحة البيانات
+            if len(t) == 0 or len(q) == 0 or len(t) != len(q):
+                return jsonify({"error": "Invalid or mismatched time and production data"}), 400
+            
+            if len(t) < 5:
+                return jsonify({"error": "Not enough data points (minimum 5 required)"}), 400
+            
+            # إنشاء DataFrame من البيانات
+            df = pd.DataFrame({"t": t, "q": q})
+            df = df.dropna()
+            df = df[df["q"] > 0]
+            df = df.sort_values("t")
+            
+            if df.empty:
+                return jsonify({"error": "No valid numeric data after cleaning"}), 400
+                
+        elif 'multipart/form-data' in request.content_type:
+            # طلب FormData (من الفرونت القديم)
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
 
-        cutoff_rate = float(request.form.get("cutoff_rate", 5.0))
-        days = int(request.form.get("days", 2000))
-        dt = float(request.form.get("dt", 30))
-        time_col = request.form.get("time_col", "t")
-        rate_col = request.form.get("rate_col", "q")
+            cutoff_rate = float(request.form.get("cutoff_rate", 5.0))
+            days = int(request.form.get("days", 2000))
+            dt = float(request.form.get("dt", 30))
+            time_col = request.form.get("time_col", "t")
+            rate_col = request.form.get("rate_col", "q")
 
-        raw = request.files["file"].read()
-        df_raw = pd.read_csv(io.BytesIO(raw))
+            raw = request.files["file"].read()
+            df_raw = pd.read_csv(io.BytesIO(raw))
 
-        if df_raw.empty:
-            return jsonify({"error": "Uploaded file is empty"}), 400
+            if df_raw.empty:
+                return jsonify({"error": "Uploaded file is empty"}), 400
 
-        df = clean_and_prepare_df(df_raw, time_col=time_col, rate_col=rate_col)
-        if df.empty or len(df) < 5:
-            return jsonify({"error": "Not enough valid data points after cleaning"}), 400
+            df = clean_and_prepare_df(df_raw, time_col=time_col, rate_col=rate_col)
+            if df.empty or len(df) < 5:
+                return jsonify({"error": "Not enough valid data points after cleaning"}), 400
+        else:
+            return jsonify({"error": "Unsupported content type"}), 400
 
+        # تشغيل تحليل DCA
         models, best = run_dca(df)
         best_params = models[best]["params"]
 
@@ -757,7 +793,7 @@ def dca_analyze():
                 "cutoff_rate": cutoff_rate,
                 "days": days,
                 "dt": dt,
-                "original_columns": list(df_raw.columns)
+                "data_points": len(df)
             }
         })
 
@@ -769,24 +805,55 @@ def dca_analyze():
 def dca_report():
     """Generate professional PDF report with plots (2 pages)"""
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+        if request.content_type and 'application/json' in request.content_type:
+            # طلب JSON (من الفرونت الجديد)
+            data = request.get_json()
+            
+            # استخراج البيانات من JSON
+            t = np.array(data.get("t", []))
+            q = np.array(data.get("q", []))
+            cutoff_rate = float(data.get("cutoff_rate", 5.0))
+            days = int(data.get("days", 2000))
+            dt = float(data.get("dt", 30))
+            
+            # التحقق من صحة البيانات
+            if len(t) == 0 or len(q) == 0 or len(t) != len(q):
+                return jsonify({"error": "Invalid or mismatched time and production data"}), 400
+            
+            if len(t) < 5:
+                return jsonify({"error": "Not enough data points (minimum 5 required)"}), 400
+            
+            # إنشاء DataFrame من البيانات
+            df = pd.DataFrame({"t": t, "q": q})
+            df = df.dropna()
+            df = df[df["q"] > 0]
+            df = df.sort_values("t")
+            
+            if df.empty:
+                return jsonify({"error": "No valid numeric data after cleaning"}), 400
+                
+        elif 'multipart/form-data' in request.content_type:
+            # طلب FormData (من الفرونت القديم)
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
 
-        cutoff_rate = float(request.form.get("cutoff_rate", 5.0))
-        days = int(request.form.get("days", 2000))
-        dt = float(request.form.get("dt", 30))
-        time_col = request.form.get("time_col", "t")
-        rate_col = request.form.get("rate_col", "q")
+            cutoff_rate = float(request.form.get("cutoff_rate", 5.0))
+            days = int(request.form.get("days", 2000))
+            dt = float(request.form.get("dt", 30))
+            time_col = request.form.get("time_col", "t")
+            rate_col = request.form.get("rate_col", "q")
 
-        raw = request.files["file"].read()
-        df_raw = pd.read_csv(io.BytesIO(raw))
+            raw = request.files["file"].read()
+            df_raw = pd.read_csv(io.BytesIO(raw))
 
-        if df_raw.empty:
-            return jsonify({"error": "Uploaded file is empty"}), 400
+            if df_raw.empty:
+                return jsonify({"error": "Uploaded file is empty"}), 400
 
-        df = clean_and_prepare_df(df_raw, time_col=time_col, rate_col=rate_col)
-        if df.empty or len(df) < 5:
-            return jsonify({"error": "Not enough valid data points after cleaning"}), 400
+            df = clean_and_prepare_df(df_raw, time_col=time_col, rate_col=rate_col)
+            if df.empty or len(df) < 5:
+                return jsonify({"error": "Not enough valid data points after cleaning"}), 400
+        else:
+            return jsonify({"error": "Unsupported content type"}), 400
 
         models, best = run_dca(df)
         best_params = models[best]["params"]
@@ -799,7 +866,7 @@ def dca_report():
             best_model=best,
             eur=eur,
             cutoff_rate=cutoff_rate,
-            original_columns=list(df_raw.columns),
+            original_columns=["t", "q"],  # أعمدة افتراضية
             df=df
         )
 
@@ -821,7 +888,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Oilnova DCA API",
-        "version": "2.5.0",
+        "version": "3.0.0",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
@@ -831,3 +898,4 @@ def health_check():
 # ======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+[file content end]
