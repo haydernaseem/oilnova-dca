@@ -11,17 +11,20 @@ from scipy.optimize import curve_fit
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    Image, PageBreak
+    Image, PageBreak, KeepTogether
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.lib.utils import ImageReader
 
 # Matplotlib for plots
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -395,8 +398,16 @@ def create_comparison_plot(df, models, best_model):
     return 'comparison_plot.png'
 
 
+def add_page_number(canvas, doc):
+    """Add page numbers to PDF"""
+    page_num = canvas.getPageNumber()
+    text = f"Page {page_num}"
+    canvas.setFont("Helvetica", 8)
+    canvas.drawRightString(doc.pagesize[0] - 20, 20, text)
+
+
 def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df):
-    """Create professional PDF report with plots"""
+    """Create professional PDF report with plots (2 pages)"""
     buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     doc = SimpleDocTemplate(buffer.name, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -419,6 +430,14 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     ))
     
     styles.add(ParagraphStyle(
+        name='Header3',
+        parent=styles['Heading3'],
+        fontSize=12,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=6,
+    ))
+    
+    styles.add(ParagraphStyle(
         name='Highlight',
         parent=styles['Normal'],
         fontSize=10,
@@ -429,7 +448,18 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
         borderWidth=1,
     ))
     
+    styles.add(ParagraphStyle(
+        name='SmallText',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.HexColor('#666666'),
+    ))
+    
     story = []
+    
+    # ======================
+    # PAGE 1: Analysis Results
+    # ======================
     
     # Header with logo placeholder
     header_text = """
@@ -468,11 +498,12 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     # Key Findings box
     findings_text = f"""
     <b>KEY FINDINGS:</b><br/>
-    • Best-fitting Model: <font color=#c0392b><b>{best_model.upper()}</b></font><br/>
-    • Estimated Ultimate Recovery (EUR): <b>{eur:,.0f}</b> units<br/>
-    • Economic Cutoff Rate: <b>{cutoff_rate}</b> units/day<br/>
-    • Data Points Analyzed: <b>{len(df)}</b> measurements<br/>
-    • Time Period: <b>{df['t'].min():.0f} - {df['t'].max():.0f}</b> days
+    • <b>Best-fitting Model:</b> <font color=#c0392b>{best_model.upper()}</font><br/>
+    • <b>Estimated Ultimate Recovery (EUR):</b> {eur:,.0f} units<br/>
+    • <b>Economic Cutoff Rate:</b> {cutoff_rate} units/day<br/>
+    • <b>Data Points Analyzed:</b> {len(df)} measurements<br/>
+    • <b>Time Period:</b> {df['t'].min():.0f} - {df['t'].max():.0f} days<br/>
+    • <b>Production Range:</b> {df['q'].min():,.0f} - {df['q'].max():,.0f} units/day
     """
     story.append(Paragraph(findings_text, styles["Highlight"]))
     story.append(Spacer(1, 25))
@@ -514,13 +545,14 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     story.append(caption_table)
     story.append(Spacer(1, 25))
     
-    # Detailed Results Table
+    # Detailed Results Table - FIXED FORMAT
     story.append(Paragraph("MODEL PARAMETERS AND STATISTICS", styles["Header2"]))
     story.append(Spacer(1, 10))
     
+    # Prepare table data without HTML tags in the data
     table_data = [
-        ["<b>Model</b>", "<b>Initial Rate (qi)</b>", "<b>Decline Rate (Di)</b>", 
-         "<b>b-factor</b>", "<b>R²</b>", "<b>AIC</b>", "<b>RSS</b>"]
+        ["Model", "Initial Rate (qi)", "Decline Rate (Di)", 
+         "b-factor", "R²", "AIC", "RSS"]
     ]
     
     for name, res in models.items():
@@ -532,124 +564,138 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
         aic = f"{res.get('aic', 0):.2f}"
         rss = f"{res.get('rss', 0):.2e}"
         
-        # Highlight best model row
+        # Highlight best model
         if name == best_model:
-            row = [
-                f"<b>{name.upper()}*</b>",
-                f"<b>{qi}</b>",
-                f"<b>{Di}</b>",
-                f"<b>{b}</b>" if b != "N/A" else "<b>N/A</b>",
-                f"<b>{r2}</b>",
-                f"<b>{aic}</b>",
-                f"<b>{rss}</b>"
-            ]
+            row = [f"{name.upper()}*", qi, Di, b, r2, aic, rss]
         else:
             row = [name.title(), qi, Di, b, r2, aic, rss]
         
         table_data.append(row)
     
-    table = Table(table_data, hAlign="CENTER")
+    table = Table(table_data, hAlign="CENTER", colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 
+                                                           0.8*inch, 0.7*inch, 0.7*inch, 0.8*inch])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0b3d91")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 10),
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ("TEXTCOLOR", (0, 1), (-1, -1), colors.black),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
+        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+        ("TEXTCOLOR", (0, 1), (0, -1), colors.HexColor("#0b3d91")),
     ]))
+    
+    # Highlight the best model row
+    for i, row in enumerate(table_data[1:], start=1):
+        if row[0].endswith("*"):
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, i), (-1, i), colors.HexColor("#e8f4fd")),
+                ("FONTNAME", (0, i), (-1, i), "Helvetica-Bold"),
+            ]))
+    
     story.append(table)
     
-    note_text = "*<font size=7> Indicates best-fitting model based on lowest Akaike Information Criterion (AIC)</font>"
-    story.append(Paragraph(note_text, styles["Normal"]))
-    story.append(Spacer(1, 20))
+    note_text = "*Indicates best-fitting model based on lowest Akaike Information Criterion (AIC)"
+    story.append(Paragraph(note_text, styles["SmallText"]))
+    story.append(Spacer(1, 15))
     
     # Data Information
-    story.append(Paragraph("DATA INFORMATION", styles["Header2"]))
-    story.append(Spacer(1, 10))
+    story.append(Paragraph("DATA INFORMATION", styles["Header3"]))
+    story.append(Spacer(1, 5))
     
     data_info = f"""
     <para>
-    <b>Original Dataset Columns:</b> {', '.join(original_columns)}<br/>
+    <b>Original Dataset Columns:</b> {', '.join(original_columns[:5])}{'...' if len(original_columns) > 5 else ''}<br/>
     <b>Processed Data Points:</b> {len(df)} valid measurements<br/>
-    <b>Time Range:</b> {df['t'].min():.2f} to {df['t'].max():.2f} days<br/>
-    <b>Rate Range:</b> {df['q'].min():,.2f} to {df['q'].max():,.2f} units/day<br/>
     <b>Data Quality:</b> All rates > 0, sorted chronologically
     </para>
     """
     story.append(Paragraph(data_info, styles["Normal"]))
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 15))
     
     # EUR Analysis
-    story.append(Paragraph("ECONOMIC ANALYSIS", styles["Header2"]))
-    story.append(Spacer(1, 10))
+    story.append(Paragraph("ECONOMIC ANALYSIS", styles["Header3"]))
+    story.append(Spacer(1, 5))
     
     eur_text = f"""
     <para>
     <b>Estimated Ultimate Recovery (EUR):</b> {eur:,.0f} cumulative units<br/>
     <b>Economic Cutoff Rate:</b> {cutoff_rate} units/day<br/>
-    <b>Assumptions:</b> Constant operating conditions, no workovers<br/>
     <b>Confidence Level:</b> Based on Monte Carlo uncertainty analysis (200 simulations)
     </para>
     """
     story.append(Paragraph(eur_text, styles["Normal"]))
-    story.append(Spacer(1, 20))
     
-    # Page break for appendix/disclaimer
+    # Add page break
     story.append(PageBreak())
     
-    # Disclaimer and Methodology
-    story.append(Paragraph("METHODOLOGY & DISCLAIMER", styles["Header1"]))
-    story.append(Spacer(1, 15))
+    # ======================
+    # PAGE 2: Disclaimer and Branding
+    # ======================
     
-    methodology = """
-    <para>
-    <b>ANALYSIS METHODOLOGY:</b><br/>
-    1. Data preprocessing and validation<br/>
-    2. Nonlinear regression using Levenberg-Marquardt algorithm<br/>
-    3. Model selection via Akaike Information Criterion (AIC)<br/>
-    4. EUR calculation using trapezoidal integration<br/>
-    5. Uncertainty quantification via Monte Carlo simulation<br/>
-    6. Economic cutoff application at specified rate<br/>
-    </para>
-    """
-    story.append(Paragraph(methodology, styles["Normal"]))
-    story.append(Spacer(1, 15))
-    
-    disclaimer = """
-    <para>
-    <b>IMPORTANT DISCLAIMER:</b><br/>
-    This decline curve analysis is based on historical production data and mathematical modeling. 
-    Results are indicative and should be interpreted with proper engineering judgment. 
-    Actual future performance may vary due to operational changes, reservoir behavior, 
-    economic factors, and unforeseen circumstances. This report does not constitute 
-    investment advice or guarantee of future performance.
-    </para>
-    """
-    story.append(Paragraph(disclaimer, styles["Highlight"]))
-    story.append(Spacer(1, 25))
-    
-    # Footer with OILNOVA branding
-    footer_text = """
-    <para align=center>
-    <font size=9 color=#0b3d91><b>OILNOVA AI</b></font><br/>
-    <font size=8>Advanced Petroleum Analytics Platform</font><br/>
-    <font size=7 color=#7f8c8d>Report Generated by OILNOVA AI Decline Curve Analysis Module</font><br/>
-    <font size=6 color=#95a5a6>© 2024 OILNOVA AI. All rights reserved. Proprietary and Confidential.</font>
-    </para>
-    """
+    # Disclaimer Header
+    story.append(Paragraph("IMPORTANT DISCLAIMER", styles["Header1"]))
     story.append(Spacer(1, 20))
-    story.append(Paragraph(footer_text, styles["Normal"]))
     
-    # Build the document
-    doc.build(story)
+    # Disclaimer Text
+    disclaimer_text = """
+    <para>
+    <b>This decline curve analysis is based on historical production data and mathematical modeling.</b><br/><br/>
+    
+    <b>Results are indicative and should be interpreted with proper engineering judgment.</b> 
+    Actual future performance may vary due to operational changes, reservoir behavior, 
+    economic factors, and unforeseen circumstances.<br/><br/>
+    
+    <b>This report does not constitute investment advice or guarantee of future performance.</b><br/><br/>
+    
+    The analysis employs industry-standard methods including nonlinear regression, 
+    model selection via Akaike Information Criterion (AIC), and Monte Carlo simulation 
+    for uncertainty quantification. All calculations are performed with rigorous 
+    statistical validation and quality control procedures.<br/><br/>
+    
+    For detailed methodology or technical support, please contact the OILNOVA AI 
+    technical team.
+    </para>
+    """
+    story.append(Paragraph(disclaimer_text, styles["Normal"]))
+    story.append(Spacer(1, 40))
+    
+    # OILNOVA Branding Section
+    branding_text = """
+    <para align=center>
+    <font size=14 color=#0b3d91><b>OILNOVA AI</b></font><br/>
+    <font size=11>Advanced Petroleum Analytics Platform</font><br/>
+    <br/>
+    <font size=10 color=#7f8c8d>Report Generated by OILNOVA AI Decline Curve Analysis Module</font><br/>
+    <br/>
+    <font size=9 color=#95a5a6>© 2024 OILNOVA AI. All rights reserved.</font><br/>
+    <font size=8 color=#95a5a6>Proprietary and Confidential</font>
+    </para>
+    """
+    story.append(Paragraph(branding_text, styles["Normal"]))
+    story.append(Spacer(1, 30))
+    
+    # Technical Details
+    tech_details = """
+    <para align=center>
+    <font size=8 color=#666666>
+    Report Version: 2.0 | Generated on: """ + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """<br/>
+    Analysis Engine: DeepSeek AI | Platform: OILNOVA AI Analytics Suite
+    </font>
+    </para>
+    """
+    story.append(Paragraph(tech_details, styles["SmallText"]))
+    
+    # Build the document with page numbers
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     
     # Clean up temporary plot files
-    import os
     for plot_file in [exp_plot, harm_plot, hyp_plot, comparison_plot]:
         try:
             os.remove(plot_file)
@@ -735,7 +781,7 @@ def dca_analyze():
 
 @app.route("/dca-report", methods=["POST"])
 def dca_report():
-    """يرجع PDF تقرير كامل مع الرسوم البيانية."""
+    """Generate professional PDF report with plots (2 pages)"""
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
@@ -789,7 +835,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Oilnova DCA API",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
