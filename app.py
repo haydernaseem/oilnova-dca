@@ -610,29 +610,35 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     story.append(Paragraph(note_text, styles["SmallText"]))
     story.append(Spacer(1, 20))
     
-    # Data and EUR Information in two columns
+    # Data and EUR Information in SAME LINE (تعديل رئيسي هنا)
+    # نستخدم جدول بعمودين بدون عناوين فوقها
+    
     info_data = [
-        ["DATA INFORMATION", "ECONOMIC ANALYSIS"],
-        [
-            f"""<b>Original Columns:</b> {', '.join(original_columns[:3])}{'...' if len(original_columns) > 3 else ''}<br/>
-            <b>Data Points:</b> {len(df)} measurements<br/>
-            <b>Data Quality:</b> All rates > 0""",
-            f"""<b>Estimated Ultimate Recovery:</b> {eur:,.0f} units<br/>
-            <b>Cutoff Rate:</b> {cutoff_rate} units/day<br/>
-            <b>Confidence:</b> Monte Carlo (200 sims)"""
+        [  # Column 1: DATA INFORMATION
+            Paragraph("<b>DATA INFORMATION</b>", styles["Normal"]),
+            Paragraph(f"<b>Original Columns:</b> {', '.join(original_columns[:3])}{'...' if len(original_columns) > 3 else ''}", styles["Normal"]),
+            Paragraph(f"<b>Data Points:</b> {len(df)} measurements", styles["Normal"]),
+            Paragraph(f"<b>Data Quality:</b> All rates > 0", styles["Normal"])
+        ],
+        [  # Column 2: ECONOMIC ANALYSIS
+            Paragraph("<b>ECONOMIC ANALYSIS</b>", styles["Normal"]),
+            Paragraph(f"<b>Estimated Ultimate Recovery:</b> {eur:,.0f} units", styles["Normal"]),
+            Paragraph(f"<b>Cutoff Rate:</b> {cutoff_rate} units/day", styles["Normal"]),
+            Paragraph(f"<b>Confidence:</b> Monte Carlo (200 sims)", styles["Normal"])
         ]
     ]
     
+    # Create table with 2 columns
     info_table = Table(info_data, colWidths=[2.8*inch, 2.8*inch])
     info_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 9),
-        ("FONTSIZE", (0, 1), (-1, 1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
     ]))
     
     story.append(info_table)
@@ -663,7 +669,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     tech_footer = f"""
     <para align=center>
     <font size=7 color=#95a5a6>
-    Report Version: 2.4 | Analysis Engine: DeepSeek AI | Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
+    Report Version: 2.5 | Analysis Engine: DeepSeek AI | Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
     </font>
     </para>
     """
@@ -812,7 +818,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Oilnova DCA API",
-        "version": "2.4.0",
+        "version": "2.5.0",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
