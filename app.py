@@ -608,41 +608,44 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     
     note_text = "*Best-fitting model based on lowest AIC"
     story.append(Paragraph(note_text, styles["SmallText"]))
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 15))
     
-    # Data and EUR Information in SAME LINE (تعديل رئيسي هنا)
-    # نستخدم جدول بعمودين بدون عناوين فوقها
+    # ======================
+    # SUMMARY INFORMATION - جديد ومحسن
+    # ======================
     
-    info_data = [
-        [  # Column 1: DATA INFORMATION
-            Paragraph("<b>DATA INFORMATION</b>", styles["Normal"]),
-            Paragraph(f"<b>Original Columns:</b> {', '.join(original_columns[:3])}{'...' if len(original_columns) > 3 else ''}", styles["Normal"]),
-            Paragraph(f"<b>Data Points:</b> {len(df)} measurements", styles["Normal"]),
-            Paragraph(f"<b>Data Quality:</b> All rates > 0", styles["Normal"])
-        ],
-        [  # Column 2: ECONOMIC ANALYSIS
-            Paragraph("<b>ECONOMIC ANALYSIS</b>", styles["Normal"]),
-            Paragraph(f"<b>Estimated Ultimate Recovery:</b> {eur:,.0f} units", styles["Normal"]),
-            Paragraph(f"<b>Cutoff Rate:</b> {cutoff_rate} units/day", styles["Normal"]),
-            Paragraph(f"<b>Confidence:</b> Monte Carlo (200 sims)", styles["Normal"])
-        ]
+    story.append(Paragraph("ANALYSIS SUMMARY", styles["Header3"]))
+    story.append(Spacer(1, 8))
+    
+    # Create a clean table for summary information
+    summary_data = [
+        ["PARAMETER", "VALUE", "DESCRIPTION"],
+        ["Original Columns", f"{', '.join(original_columns[:3])}{'...' if len(original_columns) > 3 else ''}", "Input data columns"],
+        ["Data Points", f"{len(df)} measurements", "Valid measurements analyzed"],
+        ["Data Quality", "All rates > 0", "Data validation status"],
+        ["EUR Estimate", f"{eur:,.0f} units", "Estimated Ultimate Recovery"],
+        ["Cutoff Rate", f"{cutoff_rate} units/day", "Economic cutoff threshold"],
+        ["Confidence", "Monte Carlo (200 sims)", "Uncertainty analysis method"],
+        ["Best Model", f"{best_model.upper()}", "Selected decline model"]
     ]
     
-    # Create table with 2 columns
-    info_table = Table(info_data, colWidths=[2.8*inch, 2.8*inch])
-    info_table.setStyle(TableStyle([
+    summary_table = Table(summary_data, colWidths=[2.0*inch, 1.8*inch, 2.2*inch])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
     ]))
     
-    story.append(info_table)
-    story.append(Spacer(1, 40))
+    story.append(summary_table)
+    story.append(Spacer(1, 20))
     
     # ======================
     # OILNOVA AI Branding at bottom of Page 2
@@ -651,7 +654,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     # Horizontal line
     from reportlab.platypus.flowables import HRFlowable
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0b3d91")))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 12))
     
     # OILNOVA AI Branding
     branding_text = """
@@ -663,7 +666,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     </para>
     """
     story.append(Paragraph(branding_text, styles["Normal"]))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
     
     # Technical footer
     tech_footer = f"""
