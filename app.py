@@ -397,7 +397,7 @@ def create_comparison_plot(df, models, best_model):
 
 
 def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df):
-    """Create professional PDF report with plots (2 pages only)"""
+    """Create professional PDF report with plots (2 pages)"""
     buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     doc = SimpleDocTemplate(buffer.name, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -458,7 +458,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     story = []
     
     # ======================
-    # PAGE 1: Analysis Results + OILNOVA Branding
+    # PAGE 1: Analysis Results (الرسوم البيانية والملخص)
     # ======================
     
     # Header with logo placeholder
@@ -502,10 +502,11 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     • <b>Estimated Ultimate Recovery (EUR):</b> {eur:,.0f} units<br/>
     • <b>Economic Cutoff Rate:</b> {cutoff_rate} units/day<br/>
     • <b>Data Points Analyzed:</b> {len(df)} measurements<br/>
-    • <b>Time Period:</b> {df['t'].min():.0f} - {df['t'].max():.0f} days
+    • <b>Time Period:</b> {df['t'].min():.0f} - {df['t'].max():.0f} days<br/>
+    • <b>Production Range:</b> {df['q'].min():,.0f} - {df['q'].max():,.0f} units/day
     """
     story.append(Paragraph(findings_text, styles["Highlight"]))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 20))
     
     # Create plots
     exp_plot, harm_plot, hyp_plot = create_dca_plots(df, models, best_model)
@@ -514,8 +515,8 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     # Model Comparison Plot
     story.append(Paragraph("MODEL COMPARISON ANALYSIS", styles["Header2"]))
     story.append(Spacer(1, 6))
-    story.append(Image(comparison_plot, width=5.5*inch, height=2.2*inch))
-    story.append(Spacer(1, 10))
+    story.append(Image(comparison_plot, width=6*inch, height=2.5*inch))
+    story.append(Spacer(1, 15))
     
     # Individual Model Analysis
     story.append(Paragraph("INDIVIDUAL MODEL ANALYSIS", styles["Header2"]))
@@ -523,12 +524,12 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     
     # Create a table with the three plots
     plot_table_data = [
-        [Image(exp_plot, width=2.3*inch, height=1.0*inch),
-         Image(harm_plot, width=2.3*inch, height=1.0*inch),
-         Image(hyp_plot, width=2.3*inch, height=1.0*inch)]
+        [Image(exp_plot, width=2.5*inch, height=1.1*inch),
+         Image(harm_plot, width=2.5*inch, height=1.1*inch),
+         Image(hyp_plot, width=2.5*inch, height=1.1*inch)]
     ]
     
-    plot_table = Table(plot_table_data, colWidths=[2.3*inch, 2.3*inch, 2.3*inch])
+    plot_table = Table(plot_table_data, colWidths=[2.5*inch, 2.5*inch, 2.5*inch])
     plot_table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -537,16 +538,22 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     story.append(Spacer(1, 6))
     
     # Add plot captions
-    captions = ["Exponential Decline", "Harmonic Decline", "Hyperbolic Decline"]
-    caption_table_data = [[Paragraph(f"<para align=center><font size=7><b>{cap}</b></font></para>", styles["Normal"]) 
+    captions = ["Exponential Decline Model", "Harmonic Decline Model", "Hyperbolic Decline Model"]
+    caption_table_data = [[Paragraph(f"<para align=center><font size=8><b>{cap}</b></font></para>", styles["Normal"]) 
                           for cap in captions]]
-    caption_table = Table(caption_table_data, colWidths=[2.3*inch, 2.3*inch, 2.3*inch])
+    caption_table = Table(caption_table_data, colWidths=[2.5*inch, 2.5*inch, 2.5*inch])
     story.append(caption_table)
-    story.append(Spacer(1, 15))
+    
+    # Add page break
+    story.append(PageBreak())
+    
+    # ======================
+    # PAGE 2: Detailed Results and OILNOVA Branding
+    # ======================
     
     # Detailed Results Table
     story.append(Paragraph("MODEL PARAMETERS AND STATISTICS", styles["Header2"]))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 10))
     
     # Prepare table data
     table_data = [
@@ -570,8 +577,8 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
         
         table_data.append(row)
     
-    table = Table(table_data, hAlign="CENTER", colWidths=[1.0*inch, 0.9*inch, 0.9*inch, 
-                                                           0.6*inch, 0.6*inch, 0.7*inch, 0.8*inch])
+    table = Table(table_data, hAlign="CENTER", colWidths=[1.2*inch, 1.0*inch, 1.0*inch, 
+                                                           0.7*inch, 0.6*inch, 0.7*inch, 0.8*inch])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0b3d91")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -579,9 +586,9 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ("TEXTCOLOR", (0, 1), (-1, -1), colors.black),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
@@ -601,12 +608,9 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     
     note_text = "*Best-fitting model based on lowest AIC"
     story.append(Paragraph(note_text, styles["SmallText"]))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 20))
     
     # Data and EUR Information in two columns
-    from reportlab.platypus import Frame, PageTemplate
-    
-    # Create a 2-column table for data and EUR info
     info_data = [
         ["DATA INFORMATION", "ECONOMIC ANALYSIS"],
         [
@@ -626,46 +630,46 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 9),
         ("FONTSIZE", (0, 1), (-1, 1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
-        ("TOPPADDING", (0, 0), (-1, 0), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
     ]))
     
     story.append(info_table)
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 40))
     
     # ======================
-    # OILNOVA AI Branding at bottom of Page 1
+    # OILNOVA AI Branding at bottom of Page 2
     # ======================
     
     # Horizontal line
     from reportlab.platypus.flowables import HRFlowable
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0b3d91")))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 15))
     
     # OILNOVA AI Branding
     branding_text = """
     <para align=center>
-    <font size=11 color=#0b3d91><b>OILNOVA AI</b></font><br/>
-    <font size=9 color=#1a5276>Advanced Petroleum Analytics Platform</font><br/>
-    <font size=8 color=#2c3e50>Report Generated by OILNOVA AI Decline Curve Analysis Module</font><br/>
-    <font size=7 color=#7f8c8d>© 2024 OILNOVA AI. All rights reserved. Proprietary and Confidential</font>
+    <font size=12 color=#0b3d91><b>OILNOVA AI</b></font><br/>
+    <font size=10 color=#1a5276>Advanced Petroleum Analytics Platform</font><br/>
+    <font size=9 color=#2c3e50>Report Generated by OILNOVA AI Decline Curve Analysis Module</font><br/>
+    <font size=8 color=#7f8c8d>© 2024 OILNOVA AI. All rights reserved. Proprietary and Confidential</font>
     </para>
     """
     story.append(Paragraph(branding_text, styles["Normal"]))
-    story.append(Spacer(1, 5))
+    story.append(Spacer(1, 10))
     
     # Technical footer
     tech_footer = f"""
     <para align=center>
-    <font size=6 color=#95a5a6>
-    Report Version: 2.3 | Analysis Engine: DeepSeek AI | Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
+    <font size=7 color=#95a5a6>
+    Report Version: 2.4 | Analysis Engine: DeepSeek AI | Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
     </font>
     </para>
     """
     story.append(Paragraph(tech_footer, styles["SmallText"]))
     
-    # Build the document (only 1 page)
+    # Build the document
     doc.build(story)
     
     # Clean up temporary plot files
@@ -754,7 +758,7 @@ def dca_analyze():
 
 @app.route("/dca-report", methods=["POST"])
 def dca_report():
-    """Generate professional PDF report with plots (1 page only)"""
+    """Generate professional PDF report with plots (2 pages)"""
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
@@ -808,7 +812,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Oilnova DCA API",
-        "version": "2.3.0",
+        "version": "2.4.0",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
