@@ -1,5 +1,3 @@
-[file name]: app.py
-[file content begin]
 import io
 import tempfile
 import datetime
@@ -898,4 +896,3 @@ def health_check():
 # ======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-[file content end]
