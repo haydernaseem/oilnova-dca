@@ -10,10 +10,18 @@ from scipy.optimize import curve_fit
 # PDF
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image, PageBreak
 )
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.units import inch
+
+# Matplotlib for plots
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 app = Flask(__name__)
 CORS(app)
@@ -21,7 +29,6 @@ CORS(app)
 # ======================
 # 1) Decline Models
 # ======================
-
 
 def exp_decline(t, qi, Di):
     """Exponential decline: q = qi * exp(-Di * t)"""
@@ -231,66 +238,424 @@ def monte_carlo_uncertainty(best_model, params, days=2000, dt=10, n_sim=200):
     return t, q_p10, q_p50, q_p90
 
 # ======================
-# 6) PDF Report Builder
+# 6) PDF Report Builder - Updated with Plots
 # ======================
 
 
-def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns):
+def create_dca_plots(df, models, best_model):
+    """Create professional DCA plots for PDF report"""
+    t = df["t"].values
+    q = df["q"].values
+    
+    fig_width = 8
+    fig_height = 2.5
+    
+    # Plot 1: Exponential Decline
+    fig1, ax1 = plt.subplots(figsize=(fig_width, fig_height))
+    ax1.scatter(t, q, color='black', s=20, alpha=0.6, label='Actual Data')
+    
+    if "exponential" in models:
+        params = models["exponential"]["params"]
+        t_fit = np.linspace(t.min(), t.max() * 1.5, 100)
+        q_fit = exp_decline(t_fit, params["qi"], params["Di"])
+        line_style = '--' if best_model != "exponential" else '-'
+        line_width = 1.5 if best_model != "exponential" else 2.5
+        line_color = 'blue' if best_model != "exponential" else 'red'
+        ax1.plot(t_fit, q_fit, line_style, color=line_color, 
+                linewidth=line_width, label='Exponential Fit')
+    
+    ax1.set_xlabel('Time (days)', fontsize=9)
+    ax1.set_ylabel('Rate', fontsize=9)
+    ax1.set_title('Exponential Decline Analysis', fontsize=11, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize=8)
+    ax1.tick_params(labelsize=8)
+    
+    # Format y-axis with comma separators
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+    
+    plt.tight_layout()
+    plt.savefig('exp_plot.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Plot 2: Harmonic Decline
+    fig2, ax2 = plt.subplots(figsize=(fig_width, fig_height))
+    ax2.scatter(t, q, color='black', s=20, alpha=0.6, label='Actual Data')
+    
+    if "harmonic" in models:
+        params = models["harmonic"]["params"]
+        t_fit = np.linspace(t.min(), t.max() * 1.5, 100)
+        q_fit = harm_decline(t_fit, params["qi"], params["Di"])
+        line_style = '--' if best_model != "harmonic" else '-'
+        line_width = 1.5 if best_model != "harmonic" else 2.5
+        line_color = 'green' if best_model != "harmonic" else 'red'
+        ax2.plot(t_fit, q_fit, line_style, color=line_color, 
+                linewidth=line_width, label='Harmonic Fit')
+    
+    ax2.set_xlabel('Time (days)', fontsize=9)
+    ax2.set_ylabel('Rate', fontsize=9)
+    ax2.set_title('Harmonic Decline Analysis', fontsize=11, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(fontsize=8)
+    ax2.tick_params(labelsize=8)
+    ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+    
+    plt.tight_layout()
+    plt.savefig('harm_plot.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Plot 3: Hyperbolic Decline
+    fig3, ax3 = plt.subplots(figsize=(fig_width, fig_height))
+    ax3.scatter(t, q, color='black', s=20, alpha=0.6, label='Actual Data')
+    
+    if "hyperbolic" in models:
+        params = models["hyperbolic"]["params"]
+        t_fit = np.linspace(t.min(), t.max() * 1.5, 100)
+        q_fit = hyp_decline(t_fit, params["qi"], params["Di"], params["b"])
+        line_style = '--' if best_model != "hyperbolic" else '-'
+        line_width = 1.5 if best_model != "hyperbolic" else 2.5
+        line_color = 'purple' if best_model != "hyperbolic" else 'red'
+        ax3.plot(t_fit, q_fit, line_style, color=line_color, 
+                linewidth=line_width, label='Hyperbolic Fit')
+    
+    ax3.set_xlabel('Time (days)', fontsize=9)
+    ax3.set_ylabel('Rate', fontsize=9)
+    ax3.set_title('Hyperbolic Decline Analysis', fontsize=11, fontweight='bold')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(fontsize=8)
+    ax3.tick_params(labelsize=8)
+    ax3.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+    
+    plt.tight_layout()
+    plt.savefig('hyp_plot.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    return 'exp_plot.png', 'harm_plot.png', 'hyp_plot.png'
+
+
+def create_comparison_plot(df, models, best_model):
+    """Create comparison plot of all models"""
+    t = df["t"].values
+    q = df["q"].values
+    
+    fig, ax = plt.subplots(figsize=(10, 4))
+    
+    # Scatter plot of actual data
+    ax.scatter(t, q, color='black', s=25, alpha=0.8, label='Actual Data', zorder=5)
+    
+    # Plot each model
+    t_fit = np.linspace(t.min(), t.max() * 2, 200)
+    
+    colors_map = {
+        'exponential': 'blue',
+        'harmonic': 'green',
+        'hyperbolic': 'purple'
+    }
+    
+    for model_name, model_data in models.items():
+        params = model_data["params"]
+        if model_name == "exponential":
+            q_fit = exp_decline(t_fit, params["qi"], params["Di"])
+        elif model_name == "harmonic":
+            q_fit = harm_decline(t_fit, params["qi"], params["Di"])
+        else:
+            q_fit = hyp_decline(t_fit, params["qi"], params["Di"], params["b"])
+        
+        line_style = '--' if model_name != best_model else '-'
+        line_width = 1.5 if model_name != best_model else 3
+        label = f"{model_name.title()} (Best)" if model_name == best_model else model_name.title()
+        
+        ax.plot(t_fit, q_fit, line_style, color=colors_map[model_name], 
+                linewidth=line_width, label=label, alpha=0.8)
+    
+    ax.set_xlabel('Time (days)', fontsize=10, fontweight='bold')
+    ax.set_ylabel('Production Rate', fontsize=10, fontweight='bold')
+    ax.set_title('Model Comparison: Decline Curve Analysis', 
+                 fontsize=12, fontweight='bold', pad=15)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, loc='upper right')
+    ax.tick_params(labelsize=9)
+    
+    # Add text box with statistics
+    stats_text = f"Best Model: {best_model.upper()}\n"
+    stats_text += f"Data Points: {len(t)}\n"
+    stats_text += f"Time Range: {t.min():.0f} - {t.max():.0f} days"
+    
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=9, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    # Format axes
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+    
+    plt.tight_layout()
+    plt.savefig('comparison_plot.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    return 'comparison_plot.png'
+
+
+def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df):
+    """Create professional PDF report with plots"""
     buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     doc = SimpleDocTemplate(buffer.name, pagesize=A4)
     styles = getSampleStyleSheet()
+    
+    # Create custom styles
+    styles.add(ParagraphStyle(
+        name='Header1',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor('#0b3d91'),
+        spaceAfter=12,
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='Header2',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#1a5276'),
+        spaceAfter=8,
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='Highlight',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor('#2c3e50'),
+        backColor=colors.HexColor('#f8f9fa'),
+        borderPadding=5,
+        borderColor=colors.HexColor('#dee2e6'),
+        borderWidth=1,
+    ))
+    
     story = []
-
-    title = f"DCA Analysis Report - {datetime.date.today().isoformat()}"
-    story.append(Paragraph(title, styles["Title"]))
+    
+    # Header with logo placeholder
+    header_text = """
+    <para align=center>
+    <font size=16 color=#0b3d91><b>DECLINE CURVE ANALYSIS REPORT</b></font><br/>
+    <font size=11 color=#7f8c8d>Professional Petroleum Engineering Analysis</font>
+    </para>
+    """
+    story.append(Paragraph(header_text, styles["Normal"]))
+    story.append(Spacer(1, 6))
+    
+    # Report metadata
+    meta_text = f"""
+    <para align=center>
+    <font size=9>Report Date: {datetime.date.today().strftime('%B %d, %Y')} | 
+    Analysis ID: DCA-{datetime.date.today().strftime('%Y%m%d')}-{np.random.randint(1000,9999)}</font>
+    </para>
+    """
+    story.append(Paragraph(meta_text, styles["Normal"]))
+    story.append(Spacer(1, 20))
+    
+    # Executive Summary
+    story.append(Paragraph("EXECUTIVE SUMMARY", styles["Header1"]))
+    story.append(Spacer(1, 10))
+    
+    summary_text = f"""
+    <para>
+    This report presents a comprehensive Decline Curve Analysis (DCA) based on historical production data. 
+    The analysis compares three standard decline models (Exponential, Harmonic, and Hyperbolic) to determine 
+    the best fit for production forecasting and Estimated Ultimate Recovery (EUR) calculation.
+    </para>
+    """
+    story.append(Paragraph(summary_text, styles["Normal"]))
     story.append(Spacer(1, 12))
-
-    story.append(
-        Paragraph(f"Best Model: <b>{best_model}</b>", styles["Normal"]))
-    story.append(
-        Paragraph(f"Cutoff Rate: <b>{cutoff_rate}</b>", styles["Normal"]))
-    story.append(Paragraph(
-        f"Estimated EUR: <b>{eur:,.2f}</b> (same units as rate * time)", styles["Normal"]))
-    story.append(Spacer(1, 12))
-
-    story.append(Paragraph("Original Columns:", styles["Heading3"]))
-    story.append(Paragraph(", ".join(original_columns), styles["Normal"]))
-    story.append(Spacer(1, 12))
-
-    # Table of model parameters
-    story.append(Paragraph("Model Fits Summary", styles["Heading2"]))
-    table_data = [["Model", "qi", "Di", "b", "R²", "AIC", "RSS"]]
-
+    
+    # Key Findings box
+    findings_text = f"""
+    <b>KEY FINDINGS:</b><br/>
+    • Best-fitting Model: <font color=#c0392b><b>{best_model.upper()}</b></font><br/>
+    • Estimated Ultimate Recovery (EUR): <b>{eur:,.0f}</b> units<br/>
+    • Economic Cutoff Rate: <b>{cutoff_rate}</b> units/day<br/>
+    • Data Points Analyzed: <b>{len(df)}</b> measurements<br/>
+    • Time Period: <b>{df['t'].min():.0f} - {df['t'].max():.0f}</b> days
+    """
+    story.append(Paragraph(findings_text, styles["Highlight"]))
+    story.append(Spacer(1, 25))
+    
+    # Create plots
+    exp_plot, harm_plot, hyp_plot = create_dca_plots(df, models, best_model)
+    comparison_plot = create_comparison_plot(df, models, best_model)
+    
+    # Model Comparison Plot
+    story.append(Paragraph("MODEL COMPARISON ANALYSIS", styles["Header2"]))
+    story.append(Spacer(1, 10))
+    story.append(Image(comparison_plot, width=6*inch, height=2.5*inch))
+    story.append(Spacer(1, 15))
+    
+    # Individual Model Analysis
+    story.append(Paragraph("INDIVIDUAL MODEL ANALYSIS", styles["Header2"]))
+    story.append(Spacer(1, 10))
+    
+    # Create a table with the three plots
+    plot_table_data = [
+        [Image(exp_plot, width=2.6*inch, height=1.2*inch),
+         Image(harm_plot, width=2.6*inch, height=1.2*inch),
+         Image(hyp_plot, width=2.6*inch, height=1.2*inch)]
+    ]
+    
+    plot_table = Table(plot_table_data, colWidths=[2.6*inch, 2.6*inch, 2.6*inch])
+    plot_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(plot_table)
+    story.append(Spacer(1, 10))
+    
+    # Add plot captions
+    captions = ["Exponential Decline Model", "Harmonic Decline Model", "Hyperbolic Decline Model"]
+    caption_table_data = [[Paragraph(f"<para align=center><font size=8><b>{cap}</b></font></para>", styles["Normal"]) 
+                          for cap in captions]]
+    caption_table = Table(caption_table_data, colWidths=[2.6*inch, 2.6*inch, 2.6*inch])
+    story.append(caption_table)
+    story.append(Spacer(1, 25))
+    
+    # Detailed Results Table
+    story.append(Paragraph("MODEL PARAMETERS AND STATISTICS", styles["Header2"]))
+    story.append(Spacer(1, 10))
+    
+    table_data = [
+        ["<b>Model</b>", "<b>Initial Rate (qi)</b>", "<b>Decline Rate (Di)</b>", 
+         "<b>b-factor</b>", "<b>R²</b>", "<b>AIC</b>", "<b>RSS</b>"]
+    ]
+    
     for name, res in models.items():
         p = res["params"]
-        qi = f"{p.get('qi', ''):,.4f}" if "qi" in p else ""
-        Di = f"{p.get('Di', ''):,.6f}" if "Di" in p else ""
-        b = f"{p.get('b', ''):,.4f}" if "b" in p else ""
+        qi = f"{p.get('qi', 0):,.2f}" if "qi" in p else "N/A"
+        Di = f"{p.get('Di', 0):.6f}" if "Di" in p else "N/A"
+        b = f"{p.get('b', 0):.4f}" if "b" in p else "N/A"
         r2 = f"{res.get('r2', 0):.4f}"
         aic = f"{res.get('aic', 0):.2f}"
-        rss = f"{res.get('rss', 0):.2f}"
-        table_data.append([name, qi, Di, b, r2, aic, rss])
-
-    table = Table(table_data, hAlign="LEFT")
+        rss = f"{res.get('rss', 0):.2e}"
+        
+        # Highlight best model row
+        if name == best_model:
+            row = [
+                f"<b>{name.upper()}*</b>",
+                f"<b>{qi}</b>",
+                f"<b>{Di}</b>",
+                f"<b>{b}</b>" if b != "N/A" else "<b>N/A</b>",
+                f"<b>{r2}</b>",
+                f"<b>{aic}</b>",
+                f"<b>{rss}</b>"
+            ]
+        else:
+            row = [name.title(), qi, Di, b, r2, aic, rss]
+        
+        table_data.append(row)
+    
+    table = Table(table_data, hAlign="CENTER")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0b3d91")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("TEXTCOLOR", (0, 1), (-1, -1), colors.black),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
     ]))
     story.append(table)
-
-    story.append(Spacer(1, 24))
-    story.append(Paragraph(
-        "Note: Decline curve analysis is based on historical production "
-        "data and assumes stable operating conditions. Results are "
-        "indicative and should be interpreted with engineering judgement.",
-        styles["Italic"]
-    ))
-
+    
+    note_text = "*<font size=7> Indicates best-fitting model based on lowest Akaike Information Criterion (AIC)</font>"
+    story.append(Paragraph(note_text, styles["Normal"]))
+    story.append(Spacer(1, 20))
+    
+    # Data Information
+    story.append(Paragraph("DATA INFORMATION", styles["Header2"]))
+    story.append(Spacer(1, 10))
+    
+    data_info = f"""
+    <para>
+    <b>Original Dataset Columns:</b> {', '.join(original_columns)}<br/>
+    <b>Processed Data Points:</b> {len(df)} valid measurements<br/>
+    <b>Time Range:</b> {df['t'].min():.2f} to {df['t'].max():.2f} days<br/>
+    <b>Rate Range:</b> {df['q'].min():,.2f} to {df['q'].max():,.2f} units/day<br/>
+    <b>Data Quality:</b> All rates > 0, sorted chronologically
+    </para>
+    """
+    story.append(Paragraph(data_info, styles["Normal"]))
+    story.append(Spacer(1, 20))
+    
+    # EUR Analysis
+    story.append(Paragraph("ECONOMIC ANALYSIS", styles["Header2"]))
+    story.append(Spacer(1, 10))
+    
+    eur_text = f"""
+    <para>
+    <b>Estimated Ultimate Recovery (EUR):</b> {eur:,.0f} cumulative units<br/>
+    <b>Economic Cutoff Rate:</b> {cutoff_rate} units/day<br/>
+    <b>Assumptions:</b> Constant operating conditions, no workovers<br/>
+    <b>Confidence Level:</b> Based on Monte Carlo uncertainty analysis (200 simulations)
+    </para>
+    """
+    story.append(Paragraph(eur_text, styles["Normal"]))
+    story.append(Spacer(1, 20))
+    
+    # Page break for appendix/disclaimer
+    story.append(PageBreak())
+    
+    # Disclaimer and Methodology
+    story.append(Paragraph("METHODOLOGY & DISCLAIMER", styles["Header1"]))
+    story.append(Spacer(1, 15))
+    
+    methodology = """
+    <para>
+    <b>ANALYSIS METHODOLOGY:</b><br/>
+    1. Data preprocessing and validation<br/>
+    2. Nonlinear regression using Levenberg-Marquardt algorithm<br/>
+    3. Model selection via Akaike Information Criterion (AIC)<br/>
+    4. EUR calculation using trapezoidal integration<br/>
+    5. Uncertainty quantification via Monte Carlo simulation<br/>
+    6. Economic cutoff application at specified rate<br/>
+    </para>
+    """
+    story.append(Paragraph(methodology, styles["Normal"]))
+    story.append(Spacer(1, 15))
+    
+    disclaimer = """
+    <para>
+    <b>IMPORTANT DISCLAIMER:</b><br/>
+    This decline curve analysis is based on historical production data and mathematical modeling. 
+    Results are indicative and should be interpreted with proper engineering judgment. 
+    Actual future performance may vary due to operational changes, reservoir behavior, 
+    economic factors, and unforeseen circumstances. This report does not constitute 
+    investment advice or guarantee of future performance.
+    </para>
+    """
+    story.append(Paragraph(disclaimer, styles["Highlight"]))
+    story.append(Spacer(1, 25))
+    
+    # Footer with OILNOVA branding
+    footer_text = """
+    <para align=center>
+    <font size=9 color=#0b3d91><b>OILNOVA AI</b></font><br/>
+    <font size=8>Advanced Petroleum Analytics Platform</font><br/>
+    <font size=7 color=#7f8c8d>Report Generated by OILNOVA AI Decline Curve Analysis Module</font><br/>
+    <font size=6 color=#95a5a6>© 2024 OILNOVA AI. All rights reserved. Proprietary and Confidential.</font>
+    </para>
+    """
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(footer_text, styles["Normal"]))
+    
+    # Build the document
     doc.build(story)
+    
+    # Clean up temporary plot files
+    import os
+    for plot_file in [exp_plot, harm_plot, hyp_plot, comparison_plot]:
+        try:
+            os.remove(plot_file)
+        except:
+            pass
+    
     buffer.seek(0)
     return buffer
 
@@ -370,7 +735,7 @@ def dca_analyze():
 
 @app.route("/dca-report", methods=["POST"])
 def dca_report():
-    """يرجع PDF تقرير كامل."""
+    """يرجع PDF تقرير كامل مع الرسوم البيانية."""
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
@@ -402,10 +767,11 @@ def dca_report():
             best_model=best,
             eur=eur,
             cutoff_rate=cutoff_rate,
-            original_columns=list(df_raw.columns)
+            original_columns=list(df_raw.columns),
+            df=df
         )
 
-        filename = f"dca_report_{datetime.date.today().isoformat()}.pdf"
+        filename = f"DCA_Report_{datetime.date.today().isoformat()}_{np.random.randint(1000,9999)}.pdf"
         return send_file(
             pdf_buffer.name,
             as_attachment=True,
@@ -417,9 +783,19 @@ def dca_report():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Oilnova DCA API",
+        "version": "2.0.0",
+        "timestamp": datetime.datetime.now().isoformat()
+    })
+
+
 # ======================
 # Run (local)
 # ======================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
+    app.run(host="0.0.0.0", port=5000, debug=True)
