@@ -672,7 +672,7 @@ def create_pdf_report(models, best_model, eur, cutoff_rate, original_columns, df
     tech_footer = f"""
     <para align=center>
     <font size=7 color=#95a5a6>
-    Report Version: 2.5 | Analysis Engine: DeepSeek AI | Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
+    Report Version: 1.00 | Analysis Engine: OILNOA AI 
     </font>
     </para>
     """
